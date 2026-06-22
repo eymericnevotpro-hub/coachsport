@@ -365,3 +365,12 @@ input { font-family: inherit; }
 
 .link-danger { color: #ff6b6b; font-weight: 600; font-size: 14px; text-align: center; display: block; padding: 14px; }
 .spacer-lg { height: 8px; }
+
+/* ---------- Coach IA ---------- */
+.ai-card { background: linear-gradient(135deg, rgba(197,255,65,.07), var(--surface)); border-color: rgba(197,255,65,.2); }
+.ai-title { font-size: 15px; font-weight: 800; letter-spacing: -.01em; }
+.ai-result {
+  margin-top: 14px; background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 14px; padding: 14px; font-size: 13.5px; line-height: 1.55; color: var(--text);
+}
+.ai-result strong { color: var(--accent); font-weight: 700; }

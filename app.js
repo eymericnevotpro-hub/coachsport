@@ -150,7 +150,7 @@
 
   let state = load();
   let currentTab = 'home';
-  const ui = { trainTab: 'salle', selectedProgram: 'push' };
+  const ui = { trainTab: 'salle', selectedProgram: 'push', ai: { loading: null, results: {} } };
 
   /* ---------- Helpers ---------- */
   function esc(s) {
@@ -238,6 +238,50 @@
       '<path class="area" d="' + area + '"/><path class="line" d="' + line + '"/>' + dots + '</svg>';
   }
 
+  /* ---------- Coach IA ---------- */
+  function aiProfile() {
+    const cur = state.weights.length ? state.weights[state.weights.length - 1].kg : state.profile.startWeight;
+    const skills = SKILLS.map(function (s) { return s.name + ' ' + (state.training.skills[s.id] || 0) + '/' + s.steps.length; }).join('; ');
+    return {
+      name: state.profile.name, objectives: state.profile.objectives, morph: state.profile.morph,
+      currentWeight: cur, startWeight: state.profile.startWeight, targetWeight: state.profile.targetWeight,
+      kcalTarget: state.nutrition.kcalTarget, proTarget: state.nutrition.proTarget, skills: skills,
+    };
+  }
+  function mdLite(t) {
+    var s = esc(t);
+    s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    s = s.replace(/^\s*[-•]\s+/gm, '• ');
+    s = s.replace(/\n/g, '<br>');
+    return s;
+  }
+  function aiCard(mode, title, desc, btnText) {
+    const loading = ui.ai.loading === mode;
+    const result = ui.ai.results[mode];
+    return '<div class="card ai-card">' +
+      '<div><div class="ai-title">🤖 ' + title + '</div><div class="row-sub faint">' + desc + '</div></div>' +
+      (result ? '<div class="ai-result">' + mdLite(result) + '</div>' : '') +
+      '<button class="btn ' + (result ? 'btn-ghost' : 'btn-primary') + ' btn-block btn-sm" data-act="coach" data-mode="' + mode + '"' +
+      (loading ? ' disabled' : '') + ' style="margin-top:12px">' +
+      (loading ? 'Génération…' : (result ? 'Régénérer' : btnText)) + '</button></div>';
+  }
+  async function runCoach(mode, payload) {
+    ui.ai.loading = mode; render();
+    try {
+      const res = await fetch('/api/coach', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ mode: mode, profile: aiProfile(), payload: payload || {} }),
+      });
+      const data = await res.json().catch(function () { return null; });
+      if (data && data.text) ui.ai.results[mode] = data.text;
+      else if (res.status === 404) ui.ai.results[mode] = 'Le Coach IA fonctionne seulement sur le site en ligne (Vercel), pas en local.';
+      else ui.ai.results[mode] = 'Erreur (' + res.status + '). ' + ((data && data.error) || 'Réessaie plus tard.');
+    } catch (e) {
+      ui.ai.results[mode] = 'Connexion impossible. Le Coach IA marche uniquement sur le site déployé.';
+    }
+    ui.ai.loading = null; render();
+  }
+
   /* ---------- Views ---------- */
   function viewHome() {
     const t = todayStr(), plan = todayPlan();
@@ -262,6 +306,7 @@
         ringCard(wToday ? 1 : 0, wToday ? wToday : '+', 'Poids', wToday ? 'noté ✓' : 'à noter', 'progress') +
       '</div>' +
       '<div class="tip"><div class="tip-ic">' + icon('bolt') + '</div><p>' + tip + '</p></div>' +
+      aiCard('conseil', 'Coach IA', 'Un conseil perso selon ton profil et ta progression.', 'Mon conseil du jour') +
       '<div class="grid-2">' +
         '<div class="card"><div class="muted" style="font-size:12px;font-weight:600">Poids actuel</div>' +
         '<div class="big-num" style="margin-top:8px">' + (curW ? curW : '—') + '<span class="unit"> kg</span></div></div>' +
@@ -306,7 +351,8 @@
       '<div class="card-row" style="margin-top:6px">' +
       '<div class="muted" style="font-size:13px">' + doneCount + '/' + prog.exercises.length + ' exercices</div>' +
       '<button class="btn ' + (finished ? 'btn-ghost' : 'btn-primary') + ' btn-sm" data-act="finish-session">' +
-      (finished ? 'Séance validée ✓' : 'Valider la séance') + '</button></div>';
+      (finished ? 'Séance validée ✓' : 'Valider la séance') + '</button></div>' +
+      aiCard('seance', 'Séance IA', 'Une séance adaptée à ton niveau du jour.', 'Générer une séance');
   }
 
   function skillsHtml() {
@@ -358,6 +404,7 @@
       '<input class="input" id="meal-kcal" inputmode="numeric" placeholder="kcal">' +
       '<input class="input" id="meal-pro" inputmode="numeric" placeholder="prot. (g)">' +
       '<button class="btn btn-primary" data-act="add-meal">' + icon('plus') + '</button></div></div>' +
+      aiCard('nutrition', 'Repas IA', 'Des idées de repas pour ton surplus calorique.', 'Proposer des repas') +
       '<div class="section-title">Repas du jour</div>' +
       '<div class="card flush"><div class="list">' + mealRows + '</div></div>';
   }
@@ -506,6 +553,13 @@
     const act = el.dataset.act, t = todayStr();
     switch (act) {
       case 'nav': currentTab = el.dataset.tab; window.scrollTo(0, 0); render(); break;
+      case 'coach': {
+        const mode = el.dataset.mode;
+        var payload = {};
+        if (mode === 'seance') payload = { focus: (PROGRAMS.find(function (p) { return p.id === ui.selectedProgram; }) || {}).name || 'Calisthénie' };
+        runCoach(mode, payload);
+        break;
+      }
       case 'start-session': {
         const prog = el.dataset.prog; currentTab = 'training';
         ui.trainTab = prog ? 'salle' : 'skills'; if (prog) ui.selectedProgram = prog;
