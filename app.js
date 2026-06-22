@@ -106,6 +106,7 @@
   /* ---------- State ---------- */
   function defaultState() {
     return {
+      onboarded: false,
       profile: {
         name: 'Eymeric', objectives: ['Prise de muscle', 'Calisthénie'],
         morph: 'Ectomorphe', age: null, height: null,
@@ -123,6 +124,7 @@
   function migrate(s) {
     const d = defaultState();
     const out = Object.assign({}, d, s);
+    out.onboarded = s.onboarded === true;
     out.profile   = Object.assign({}, d.profile, s.profile);
     out.nutrition = Object.assign({}, d.nutrition, s.nutrition);
     out.nutrition.log = (s.nutrition && s.nutrition.log) || {};
@@ -500,7 +502,97 @@
         icon(t[2]) + '<span>' + t[1] + '</span></button>';
     }).join('');
   }
+  /* ---------- Onboarding ---------- */
+  function onbInit() {
+    if (!ui.onb) ui.onb = {
+      step: 0,
+      name: state.profile.name || '',
+      objectives: (state.profile.objectives || []).slice(),
+      morph: state.profile.morph || '',
+      startWeight: state.profile.startWeight,
+      targetWeight: state.profile.targetWeight,
+    };
+  }
+  function onbDots(active) {
+    var d = '';
+    for (var i = 1; i <= 4; i++) {
+      d += '<span class="onb-dot' + (i === active ? ' is-active' : (i < active ? ' is-done' : '')) + '"></span>';
+    }
+    return '<div class="onb-dots">' + d + '</div>';
+  }
+  function onbStep(active, eyebrow, title, subtitle, bodyHtml, isLast) {
+    return '<div class="onb">' + onbDots(active) +
+      '<div class="onb-body"><div class="onb-eyebrow">' + eyebrow + '</div>' +
+      '<h1 class="onb-title">' + title + '</h1>' +
+      (subtitle ? '<p class="onb-sub">' + subtitle + '</p>' : '') + bodyHtml + '</div>' +
+      '<div class="onb-actions">' +
+      '<button class="btn btn-ghost" data-act="onb-back">Retour</button>' +
+      '<button class="btn btn-primary onb-grow" data-act="onb-next">' + (isLast ? 'Terminer' : 'Suivant') + '</button>' +
+      '</div></div>';
+  }
+  function onboardingView() {
+    onbInit();
+    const o = ui.onb;
+    if (o.step === 0) {
+      return '<div class="onb onb-welcome">' +
+        '<div class="onb-hero"><div class="onb-logo">' + icon('dumbbell') + '</div>' +
+        '<h1 class="onb-title">Coach</h1>' +
+        '<p class="onb-sub">Ton coach de transformation : prise de muscle, calisthénie, nutrition et suivi photo — au même endroit.</p></div>' +
+        '<div class="onb-actions onb-col">' +
+        '<button class="btn btn-primary btn-block" data-act="onb-next">Commencer</button>' +
+        '<button class="link-skip" data-act="onb-skip">Passer pour l’instant</button></div></div>';
+    }
+    if (o.step === 1) {
+      return onbStep(1, 'Faisons connaissance', 'Comment tu t’appelles ?', null,
+        '<input class="input input-lg" id="onb-name" placeholder="Ton prénom" value="' + esc(o.name) + '" autocomplete="off">', false);
+    }
+    if (o.step === 2) {
+      const OBJ = ['Prise de muscle', 'Calisthénie', 'Perte de gras', 'Force', 'Endurance', 'Santé'];
+      const chips = '<div class="objectives">' + OBJ.map(function (x) {
+        return '<button class="obj ' + (o.objectives.indexOf(x) >= 0 ? 'is-on' : '') + '" data-act="onb-obj" data-obj="' + esc(x) + '">' + x + '</button>';
+      }).join('') + '</div>';
+      return onbStep(2, 'Ton objectif', 'Que veux-tu accomplir ?', 'Tu peux en choisir plusieurs.', chips, false);
+    }
+    if (o.step === 3) {
+      const MORPH = [['Ectomorphe', 'Mince, du mal à prendre du poids'], ['Mésomorphe', 'Athlétique, prend du muscle facilement'], ['Endomorphe', 'Prend muscle et gras facilement']];
+      const opts = MORPH.map(function (m) {
+        return '<button class="onb-opt ' + (o.morph === m[0] ? 'is-on' : '') + '" data-act="onb-morph" data-morph="' + m[0] + '">' +
+          '<span class="onb-opt-t">' + m[0] + '</span><span class="onb-opt-d">' + m[1] + '</span></button>';
+      }).join('');
+      return onbStep(3, 'Ton corps', 'Ton morphotype ?', 'Pour calibrer tes besoins caloriques.', opts, false);
+    }
+    return onbStep(4, 'Tes repères', 'Où en es-tu ?', 'Optionnel — modifiable à tout moment.',
+      '<div class="field"><label>Poids actuel (kg)</label><input class="input input-lg" id="onb-start" inputmode="decimal" placeholder="—" value="' + (o.startWeight == null ? '' : o.startWeight) + '"></div>' +
+      '<div class="field"><label>Poids cible (kg)</label><input class="input input-lg" id="onb-target" inputmode="decimal" placeholder="—" value="' + (o.targetWeight == null ? '' : o.targetWeight) + '"></div>', true);
+  }
+  function onbReadStep() {
+    const o = ui.onb; if (!o) return;
+    if (o.step === 1) o.name = valOf('onb-name');
+    if (o.step === 4) { o.startWeight = numFrom(valOf('onb-start')); o.targetWeight = numFrom(valOf('onb-target')); }
+  }
+  function onbFinish() {
+    const o = ui.onb || {};
+    state.profile.name = (o.name || '').trim() || 'Athlète';
+    if (o.objectives && o.objectives.length) state.profile.objectives = o.objectives;
+    if (o.morph) state.profile.morph = o.morph;
+    if (o.startWeight != null) state.profile.startWeight = o.startWeight;
+    if (o.targetWeight != null) state.profile.targetWeight = o.targetWeight;
+    if (state.profile.startWeight != null && !state.weights.length) {
+      state.weights.push({ date: todayStr(), kg: state.profile.startWeight });
+    }
+    state.onboarded = true; ui.onb = null; currentTab = 'home'; save(); render();
+  }
+  function onbSkip() { state.onboarded = true; ui.onb = null; currentTab = 'home'; save(); render(); }
+
   function render() {
+    const appEl = document.getElementById('app');
+    if (!state.onboarded) {
+      appEl.classList.add('onboarding');
+      document.getElementById('view').innerHTML = onboardingView();
+      window.scrollTo(0, 0);
+      return;
+    }
+    appEl.classList.remove('onboarding');
     renderHeader();
     document.getElementById('view').innerHTML = (VIEWS[currentTab] || viewHome)();
     renderTabbar();
@@ -560,6 +652,15 @@
         runCoach(mode, payload);
         break;
       }
+      case 'onb-next': { const o = ui.onb; onbReadStep(); if (o.step >= 4) { onbFinish(); break; } o.step++; render(); break; }
+      case 'onb-back': { const o = ui.onb; onbReadStep(); if (o.step > 0) o.step--; render(); break; }
+      case 'onb-skip': onbSkip(); break;
+      case 'onb-obj': {
+        const o = ui.onb, x = el.dataset.obj, i = o.objectives.indexOf(x);
+        if (i >= 0) o.objectives.splice(i, 1); else o.objectives.push(x);
+        render(); break;
+      }
+      case 'onb-morph': ui.onb.morph = el.dataset.morph; render(); break;
       case 'start-session': {
         const prog = el.dataset.prog; currentTab = 'training';
         ui.trainTab = prog ? 'salle' : 'skills'; if (prog) ui.selectedProgram = prog;
